@@ -214,3 +214,12 @@ excel_bytes = make_excel_download(results, prev_results if "prev_results" in loc
 col1, col2 = st.columns(2)
 col1.download_button("Download current detection results as CSV", data=csv, file_name="wgs_amr_detection_results.csv", mime="text/csv")
 col2.download_button("Download full results workbook", data=excel_bytes, file_name="wgs_amr_calculator_results.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+st.markdown("---")
+st.subheader("Citation")
+
+st.info("""
+Debnath PP et al. WGS-AMR Surveillance Sample Size Calculator v1.0 (2026).
+
+This application implements a systems-level framework for genomic surveillance sample size determination incorporating prevalence, genomic observability, clustering, and sequencing failure.
+""")
