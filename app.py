@@ -11,34 +11,41 @@ st.set_page_config(
     layout="wide",
 )
 
-APP_VERSION = "1.0"
-APP_DATE = "2026-05-30"
+APP_VERSION = "1.1"
+APP_DATE = "2026-10-10"
 
 
 def ceil_safe(x: float) -> int:
     if x is None or not math.isfinite(x):
-        return 0
+        raise ValueError("Sample size must be a finite number.")
     return int(math.ceil(x))
 
 
 def detection_outputs(p: float, se: float, c: float, m: float, rho: float, f: float) -> dict:
+    """Detection-based planning with upward rounding after each adjustment."""
+    if not (0 < p < 1 and 0 < se <= 1 and 0 < c < 1):
+        raise ValueError("Require 0 < p < 1, 0 < Se <= 1, and 0 < C < 1.")
+    if not (m >= 1 and 0 <= rho <= 1 and 0 <= f < 1):
+        raise ValueError("Require m >= 1, 0 <= ICC <= 1, and 0 <= failure < 1.")
+
     p_eff = p * se
-    n0 = math.log(1 - c) / math.log(1 - p) if 0 < p < 1 and 0 < c < 1 else float("nan")
-    n_se = math.log(1 - c) / math.log(1 - p_eff) if 0 < p_eff < 1 and 0 < c < 1 else float("nan")
     deff = 1 + (m - 1) * rho
-    n_cluster = n_se * deff
-    n_final = n_cluster / (1 - f) if f < 1 else float("nan")
-    n_final_ceil = ceil_safe(n_final)
-    effective_usable_n = n_final_ceil * (1 - f) / deff if deff > 0 else float("nan")
-    p_detect = 1 - (1 - p_eff) ** effective_usable_n if 0 <= p_eff < 1 else float("nan")
+    n0 = ceil_safe(math.log1p(-c) / math.log1p(-p))
+    n_se = ceil_safe(math.log1p(-c) / math.log1p(-p_eff))
+    n_cluster = ceil_safe(n_se * deff)
+    n_final = ceil_safe(n_cluster / (1 - f))
+
+    # Planning approximation only: not an exact clustered detection probability.
+    effective_usable_n = n_final * (1 - f) / deff
+    p_detect = -math.expm1(effective_usable_n * math.log1p(-p_eff))
     return {
-        "Baseline detection n": ceil_safe(n0),
+        "Baseline detection n": n0,
         "Effective prevalence": p_eff,
-        "Sensitivity-adjusted n": ceil_safe(n_se),
+        "Sensitivity-adjusted n": n_se,
         "Design effect (DEFF)": deff,
-        "Cluster-adjusted n": ceil_safe(n_cluster),
-        "Final integrated n": n_final_ceil,
-        "Expected achieved detection probability": p_detect,
+        "Cluster-adjusted n": n_cluster,
+        "Final integrated n": n_final,
+        "Approximate achieved detection probability": p_detect,
     }
 
 
@@ -81,7 +88,7 @@ def make_excel_download(detection, prevalence, association, scenarios):
 
 
 st.title("WGS-based AMR Surveillance Sample Size Calculator")
-st.caption(f"Version {APP_VERSION} · validated against the Excel calculator equations · {APP_DATE}")
+st.caption(f"Version {APP_VERSION} · sequential rounding aligned with the revised detection framework · {APP_DATE}")
 
 with st.sidebar:
     st.header("Detection inputs")
@@ -100,7 +107,7 @@ k2.metric("Se-adjusted n", results["Sensitivity-adjusted n"])
 k3.metric("DEFF", f"{results['Design effect (DEFF)']:.2f}")
 k4.metric("Final integrated n", results["Final integrated n"])
 
-st.progress(min(max(results["Expected achieved detection probability"], 0), 1), text=f"Expected achieved detection probability: {results['Expected achieved detection probability']:.1%}")
+st.progress(min(max(results["Approximate achieved detection probability"], 0), 1), text=f"Approximate achieved detection probability (design-effect approximation): {results['Expected achieved detection probability']:.1%}")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["Detection calculator", "Prevalence estimation", "Association", "Scenario analysis", "User guide"])
 
@@ -115,7 +122,7 @@ with tab1:
         Effective prevalence: `p_eff = p × Se`  
         Sensitivity-adjusted detection: `n_Se = ln(1−C) / ln(1−p × Se)`  
         Design effect: `DEFF = 1 + (m−1)ρ`  
-        Final integrated sample size: `n_final = n_Se × DEFF × 1/(1−f)`
+        Final integrated sample size: `n_final = ceil(ceil(n_Se × DEFF)/(1−f))`, where `n_Se` is already rounded upward.\n\n        All stages are rounded upward sequentially. The achieved probability is a design-effect-based planning approximation, not an exact clustered detection probability.
         """
     )
 
@@ -149,7 +156,7 @@ with tab4:
         ["Higher sensitivity", 0.05, 0.95, 0.95, 8, 0.10, 0.10],
         ["Increased clustering", 0.05, 0.80, 0.95, 10, 0.15, 0.10],
         ["Lower failure rate", 0.05, 0.80, 0.95, 8, 0.10, 0.05],
-        ["Hospital effluent metagenomics", 0.10, 0.70, 0.95, 4, 0.20, 0.15],
+        ["Hospital effluent metagenomics", 0.10, 0.70, 0.95, 4, 0.20, 0.10],
         ["Current sidebar inputs", p, se, c, m, rho, f],
     ]
     scenario_rows = []
@@ -167,11 +174,11 @@ with tab4:
             "Se-adjusted n": out["Sensitivity-adjusted n"],
             "DEFF": round(out["Design effect (DEFF)"], 3),
             "Final n": out["Final integrated n"],
-            "Achieved probability": round(out["Expected achieved detection probability"], 4),
+            "Achieved probability": round(out["Approximate achieved detection probability"], 4),
         })
     scenarios = pd.DataFrame(scenario_rows)
-    edited_scenarios = st.data_editor(scenarios, use_container_width=True, hide_index=True, disabled=["Baseline n", "Se-adjusted n", "DEFF", "Final n", "Achieved probability"])
-    st.bar_chart(edited_scenarios.set_index("Scenario")[["Baseline n", "Final n"]])
+    st.dataframe(scenarios, use_container_width=True, hide_index=True)
+    st.bar_chart(scenarios.set_index("Scenario")[["Baseline n", "Final n"]])
 
     st.markdown("**One-way sensitivity by prevalence**")
     sensitivity_rows = []
