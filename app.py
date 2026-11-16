@@ -107,7 +107,10 @@ k2.metric("Se-adjusted n", results["Sensitivity-adjusted n"])
 k3.metric("DEFF", f"{results['Design effect (DEFF)']:.2f}")
 k4.metric("Final integrated n", results["Final integrated n"])
 
-st.progress(min(max(results["Approximate achieved detection probability"], 0), 1), text=f"Approximate achieved detection probability (design-effect approximation): {results['Expected achieved detection probability']:.1%}")
+st.progress(
+    min(max(results["Approximate achieved detection probability"], 0.0), 1.0),
+    text=f"Approximate achieved detection probability (design-effect approximation): {results['Approximate achieved detection probability']:.1%}",
+)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["Detection calculator", "Prevalence estimation", "Association", "Scenario analysis", "User guide"])
 
